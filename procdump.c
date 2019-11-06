@@ -82,19 +82,25 @@ int rmem(char *fp, pd_mapping *p){
     // We start with just one dump of the sections
     // Create dump file on disk.
     char dumpfile[MAX_FILE_PATH];
-    sprintf(dumpfile, "./%lx.dump", map->map_start);
-    p_dumpfile = fopen(dumpfile, "a");
+    while (map->map_next != NULL) {
+	memset(dumpfile, 0, sizeof(dumpfile));	
+    	sprintf(dumpfile, "./%lx.dump", map->map_start);
+    	p_dumpfile = fopen(dumpfile, "a");
 
-    // Read from mem file using lseek64 and read...
-    // Read should suffice since sections mapped are quite small.
-    size_t size = map->map_end - map->map_start;
-    printf("Trying to read from %lx, to %lx\tsize: %ld\n", map->map_start, map->map_end, size);
-    off64_t progess = lseek64(fd, map->map_start, SEEK_SET);
-    read(fd, m_line, sizeof(m_line));
-
-    fwrite(m_line, 1, sizeof(m_line), p_dumpfile);
-    fclose(p_dumpfile);
-
+    	// Read from mem file using lseek64 and read...
+    	// Read should suffice since sections mapped are quite small.
+    	size_t size = map->map_end - map->map_start;
+    	printf("Trying to read from %lx, to %lx\tsize: %ld\n", map->map_start, map->map_end, size);
+    	off64_t progess = lseek64(fd, map->map_start, SEEK_SET);
+    	int b_read;
+	b_read = read(fd, m_line, sizeof(m_line));
+	while(b_read > 0){
+		fwrite(m_line, 1, b_read, p_dumpfile);
+		b_read = read(fd, m_line, sizeof(m_line));
+	}
+    	fclose(p_dumpfile);
+	map = map->map_next;
+    }
 
     return 1;
 }
