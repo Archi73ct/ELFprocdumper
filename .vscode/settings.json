@@ -1,6 +1,0 @@
-{
-    "files.associations": {
-        "ptrace.h": "c",
-        "wait.h": "c"
-    }
-}
