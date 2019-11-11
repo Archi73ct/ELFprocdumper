@@ -1,6 +1,16 @@
 #include <./procdump.h>
 
-pd_mapping map(char *fp){
+/*
+* Procdump will open up the /proc/pid/maps file and parse it
+* Then it will use read() to dump the parsed mappings into seperate files.
+*
+*/
+
+pd_mapping map_memory(char *fp){
+    /*
+    * Function maps the entries in /proc/pid/maps into a linked list of the type pd_mapping.
+    * Not tested for robustness.
+    */
     char filename[MAX_FILE_PATH];
     char m_line[MAX_LINE_LEN];
     if (strlen(fp) > MAX_FILE_PATH){
@@ -46,17 +56,7 @@ pd_mapping map(char *fp){
     return *pd_list;
 }
 
-void testTraverse(pd_mapping *p){
-    pd_map *map = p->pd_map_first;
-    int i = 0;
-    while (map->map_next != NULL){
-        printf("%d element:\tstart %lx\tend %lx\n", i, map->map_start, map->map_end);
-        map = map->map_next;
-        i++;
-    }
-}
-
-int rmem(char *fp, pd_mapping *p){
+int read_memory(char *fp, pd_mapping *p){
     
     char filename[MAX_FILE_PATH];
     char m_line[MAX_MEM_READ];
@@ -70,6 +70,7 @@ int rmem(char *fp, pd_mapping *p){
     }
 
     strcpy(filename, fp);
+    
     // Check if it's possible to read mem
     int fd = open(filename, O_RDONLY);
     if (fd == -1){
@@ -79,33 +80,33 @@ int rmem(char *fp, pd_mapping *p){
 
     
 
-    // We start with just one dump of the sections
-    // Create dump file on disk.
+    // Create dump file(s) on disk.
     char dumpfile[MAX_FILE_PATH];
     while (map->map_next != NULL) {
-	memset(dumpfile, 0, sizeof(dumpfile));	
-    	sprintf(dumpfile, "./%lx.dump", map->map_start);
+	    memset(dumpfile, 0, sizeof(dumpfile));	
+        sprintf(dumpfile, "./%lx.dump", map->map_start);
     	p_dumpfile = fopen(dumpfile, "a");
 
     	// Read from mem file using lseek64 and read...
-    	// Read should suffice since sections mapped are quite small.
+    	// If sections are extremely large, read() wont read everything
     	size_t size = map->map_end - map->map_start;
     	printf("Trying to read from %lx, to %lx\tsize: %ld\n", map->map_start, map->map_end, size);
     	off64_t progess = lseek64(fd, map->map_start, SEEK_SET);
     	int b_read;
-	b_read = read(fd, m_line, sizeof(m_line));
-	while(b_read > 0){
-		fwrite(m_line, 1, b_read, p_dumpfile);
-		b_read = read(fd, m_line, sizeof(m_line));
-	}
+	    b_read = read(fd, m_line, sizeof(m_line));
+	    while(b_read > 0){
+		    fwrite(m_line, 1, b_read, p_dumpfile);
+		    b_read = read(fd, m_line, sizeof(m_line));
+	    }
     	fclose(p_dumpfile);
-	map = map->map_next;
+	    map = map->map_next;
     }
 
     return 1;
 }
 
 int main(int argc, char *argv[]){
+
     char f_maps[MAX_FILE_PATH];
     char f_mem[MAX_FILE_PATH];
     pid_t pid;
@@ -115,20 +116,25 @@ int main(int argc, char *argv[]){
         printf("%s [PID]\n", argv[0]);
         exit(-1);
     }
+    
+    // Create the necessary file paths
     pid = atoi(argv[1]);
     sprintf(f_maps, "/proc/%d/maps", pid);
     sprintf(f_mem, "/proc/%d/mem", pid);
-    // debug
-    printf("PATH TO MAPS FILE: %s\n", f_maps);
+
+    // Ptrace the PID, this will require sudo privs.
     ptrace(PT_ATTACH, pid, NULL, NULL);
+    // Don't do anything before the ptraced application is stopped
     waitpid(pid, &wpid_stat, NULL);
+
+    // This error is thrown in most cases if privs are not sufficient
     if(!WIFSTOPPED(wpid_stat)){
         puts("Process not stopped, could not attach...");
         exit(-1);
     }
 
-    pd_mapping elems = map(f_maps);
-    testTraverse(&elems);
-    int p = rmem(f_mem, &elems);
+    pd_mapping elems = map_memory(f_maps);
+
+    int p = read_memory(f_mem, &elems);
     ptrace(PT_DETACH, pid, NULL, NULL);
 }
